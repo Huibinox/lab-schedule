@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>实验室排班</title>
+<style>
+:root{font:15px "Inter","PingFang SC","Microsoft YaHei",sans-serif;color:#20332e;background:#f4f6f2;--line:#dce5df;--green:#205b47}
+*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button{cursor:pointer}header{background:#173b31;color:white;padding:25px max(24px,calc((100vw - 1360px)/2))}header h1{font-size:24px;margin:0 0 6px}header p{margin:0;color:#c6ddd3;font-size:13px}main{max-width:1408px;margin:auto;padding:32px 24px}.toolbar,.controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.toolbar{justify-content:space-between;margin-bottom:16px}.toolbar h2{font-size:24px;margin:0 14px 0 0}button,select,input{padding:8px 11px;border:1px solid #cbd8cf;border-radius:7px;background:white;color:inherit}button:hover{border-color:var(--green)}.primary{background:var(--green);color:white;border-color:var(--green)}.calendar{overflow:auto;border:1px solid var(--line);border-radius:12px;background:white}table{width:100%;min-width:950px;border-spacing:0;table-layout:fixed}th,td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:8px;vertical-align:top}thead th{background:#edf2ec;text-align:left;padding:12px;font-size:13px}thead th b{display:block;font-size:20px;margin-top:4px}.today{color:#126041;background:#deefe3!important}th:first-child{width:116px;position:sticky;left:0;z-index:1;background:#edf2ec}tbody th{text-align:left;padding:16px 12px}td{height:121px}tr:last-child td,tr:last-child th{border-bottom:0}th:last-child,td:last-child{border-right:0}.weekend{background:#fafbf9}.shift{width:100%;text-align:left;margin:0 0 5px;padding:6px 8px;border:0;border-left:3px solid var(--accent);background:var(--card);overflow-wrap:anywhere}.shift strong,.shift small{display:block}.shift small{font-size:11px}.shift strong{font-size:12px;margin:3px 0}.add{width:100%;border:1px dashed #d5e1d8;padding:3px;color:#47695a;background:transparent}.foot{font-size:13px;color:#51645a}dialog{border:1px solid var(--line);border-radius:14px;width:min(430px,calc(100% - 24px));padding:23px;color:inherit}dialog::backdrop{background:#15352d77}dialog h2{margin:0 0 14px}form label{display:grid;gap:4px;margin-bottom:10px;font-size:13px}form input,form select{width:100%;min-width:0}.pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}.actions{display:flex;gap:8px;justify-content:flex-end}.delete{color:#a02632;margin-right:auto}#error{color:#a02632;font-size:13px;min-height:1em}@media(max-width:650px){main{padding:20px 12px}.toolbar h2{font-size:19px}header{padding:20px}}
+</style>
+<header><h1>实验室排班</h1><p>模拟排班 · 编辑保存在当前浏览器</p></header>
+<main>
+<div class="toolbar">
+<div class="controls"><h2 id="range"></h2><button id="prev" aria-label="上一周">‹</button><button id="next" aria-label="下一周">›</button><button id="current">本周</button></div>
+<div class="controls"><label for="filter">PI</label><select id="filter"><option value="">全部 PI</option></select><button id="new" class="primary">＋ 新增安排</button></div>
+</div>
+<div class="calendar"><table aria-label="实验员周排班"><thead id="days"></thead><tbody id="roster"></tbody></table></div>
+<p class="foot" id="summary" aria-live="polite"></p>
+</main>
+<dialog id="editor">
+<form id="form">
+<h2 id="editor-title">新增安排</h2>
+<div class="pair"><label>实验员<select name="staff" required></select></label><label>PI<select name="pi" required></select></label></div>
+<label>日期<input type="date" name="date" required></label>
+<div class="pair"><label>开始时间<input type="time" name="start" required></label><label>结束时间<input type="time" name="end" required></label></div>
+<label>任务<input name="task" required maxlength="80" placeholder="例如 全血免疫分型"></label>
+<p id="error" role="alert"></p>
+<div class="actions"><button type="button" class="delete" id="remove" hidden>删除</button><button type="button" id="cancel">取消</button><button class="primary">保存</button></div>
+</form>
+</dialog>
+<script>
+const staff = ['实验员 A','实验员 B','实验员 C','实验员 D'];
+const pis = ['陈 PI','周 PI','林 PI'];
+const colors = [['#30765a','#e6f4e9'],['#416aa2','#e8f0fe'],['#946536','#fcf0df']];
+const weekdays = ['周一','周二','周三','周四','周五','周六','周日'];
+const key = 'lab-schedule-demo-v1';
+const $ = id => document.getElementById(id);
+const today = new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date());
+function addDays(date, days) {
+  const result = new Date(date + 'T00:00:00Z');
+  result.setUTCDate(result.getUTCDate() + days);
+  return result.toISOString().slice(0,10);
+}
+function monday(date) {
+  const weekday = new Date(date + 'T00:00:00Z').getUTCDay();
+  return addDays(date, -((weekday + 6) % 7));
+}
+let week = monday(today);
+const template = [
+  [0,0,0,'09:00','11:30','全血免疫分型'],[0,0,2,'14:00','16:00','数据复核'],
+  [0,2,1,'09:30','12:00','PBMC 染色'],[0,4,0,'13:30','16:00','FACS 采集'],
+  [1,1,1,'09:00','12:00','多色面板验证'],[1,3,2,'13:00','16:00','样本制备'],
+  [2,0,2,'10:00','12:00','仪器质控'],[2,2,0,'13:30','17:00','胞内染色'],
+  [2,5,1,'09:00','11:00','数据整理'],[3,1,0,'13:00','16:00','流式采集'],
+  [3,4,2,'09:30','12:00','报告复核']
+];
+function read() {
+  try { const saved = JSON.parse(localStorage.getItem(key)); if (Array.isArray(saved)) return saved; } catch {}
+  return template.map(([person,day,pi,start,end,task],index) => ({
+    id:'demo-' + index,staff:staff[person],date:addDays(monday(today),day),pi:pis[pi],start,end,task
+  }));
+}
+let shifts = read();
+let editing = null;
+const form = $('form');
+const fields = form.elements;
+for (const name of staff) fields.staff.add(new Option(name,name));
+for (const name of pis) {
+  fields.pi.add(new Option(name,name));
+  $('filter').add(new Option(name,name));
+}
+function element(tag, value, className) {
+  const node = document.createElement(tag);
+  node.textContent = value;
+  if (className) node.className = className;
+  return node;
+}
+function render() {
+  const dates = weekdays.map((_,index) => addDays(week,index));
+  $('range').textContent = week.replaceAll('-','.') + ' – ' + dates[6].slice(5).replace('-','.');
+  const header = document.createElement('tr');
+  header.append(element('th','实验员'));
+  dates.forEach((date,index) => {
+    const cell = element('th',weekdays[index],date === today ? 'today' : '');
+    cell.append(element('b',date.slice(8))); header.append(cell);
+  });
+  $('days').replaceChildren(header);
+  const selected = $('filter').value;
+  const visible = shifts.filter(item => dates.includes(item.date) && (!selected || selected === item.pi));
+  $('roster').replaceChildren();
+  for (const person of staff) {
+    const row = document.createElement('tr');
+    const label = element('th',person); label.scope = 'row'; row.append(label);
+    dates.forEach((date,index) => {
+      const cell = element('td','',index > 4 ? 'weekend' : '');
+      const entries = visible.filter(item => item.date === date && item.staff === person)
+        .sort((a,b) => a.start.localeCompare(b.start));
+      for (const item of entries) {
+        const button = element('button','','shift');
+        const [accent,background] = colors[pis.indexOf(item.pi)] || colors[0];
+        button.style.setProperty('--accent',accent); button.style.setProperty('--card',background);
+        button.append(element('small',item.start + '–' + item.end),element('strong',item.task),element('small',item.pi));
+        button.onclick = () => edit(item); cell.append(button);
+      }
+      const add = element('button','＋','add');
+      add.setAttribute('aria-label',person + ' ' + date + ' 新增安排');
+      add.onclick = () => edit(null,person,date); cell.append(add); row.append(cell);
+    });
+    $('roster').append(row);
+  }
+  $('summary').textContent = '本周显示 ' + visible.length + ' 条安排';
+}
+function edit(item, person = staff[0], date = today >= week && today <= addDays(week,6) ? today : week) {
+  editing = item?.id ?? null;
+  const defaults = item ?? {staff:person,date,pi:$('filter').value || pis[0],start:'09:00',end:'11:00',task:''};
+  for (const name of ['staff','date','pi','start','end','task']) fields[name].value = defaults[name];
+  $('editor-title').textContent = item ? '修改安排' : '新增安排';
+  $('remove').hidden = !item;
+  $('error').textContent = '';
+  $('editor').showModal();
+}
+function save(next) {
+  try { localStorage.setItem(key,JSON.stringify(next)); }
+  catch { $('error').textContent = '浏览器无法保存排班。请检查站点存储设置。'; return false; }
+  shifts = next;
+  return true;
+}
+form.onsubmit = event => {
+  event.preventDefault();
+  const item = Object.fromEntries(new FormData(form));
+  item.id = editing ?? (globalThis.crypto?.randomUUID?.() || Date.now() + '-' + Math.random());
+  item.task = item.task.trim();
+  if (!item.task || item.start >= item.end) {
+    $('error').textContent = !item.task ? '请输入任务。' : '结束时间必须晚于开始时间。';
+    return;
+  }
+  const others = read().filter(entry => entry.id !== editing);
+  const conflict = others.find(entry => entry.staff === item.staff && entry.date === item.date &&
+    item.start < entry.end && entry.start < item.end);
+  if (conflict) {
+    $('error').textContent = '与 ' + conflict.start + '–' + conflict.end + ' 的「' + conflict.task + '」重叠。';
+    return;
+  }
+  if (!save([...others,item])) return;
+  week = monday(item.date);
+  if ($('filter').value && $('filter').value !== item.pi) $('filter').value = item.pi;
+  $('editor').close(); render();
+};
+$('remove').onclick = () => {
+  if (confirm('删除这条安排？') && save(read().filter(entry => entry.id !== editing))) {
+    $('editor').close(); render();
+  }
+};
+$('cancel').onclick = () => $('editor').close();
+$('filter').onchange = render;
+$('new').onclick = () => edit(null);
+$('prev').onclick = () => { week = addDays(week,-7); render(); };
+$('next').onclick = () => { week = addDays(week,7); render(); };
+$('current').onclick = () => { week = monday(today); render(); };
+window.addEventListener('storage',event => { if (event.key === key || event.key === null) { shifts = read(); render(); } });
+render();
+</script>
+</html>
