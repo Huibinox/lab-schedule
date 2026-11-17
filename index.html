@@ -28,9 +28,9 @@
 </form>
 </dialog>
 <script>
-const staff = ['实验员 A','实验员 B','实验员 C','实验员 D'];
-const pis = ['陈 PI','周 PI','林 PI'];
-const colors = [['#30765a','#e6f4e9'],['#416aa2','#e8f0fe'],['#946536','#fcf0df']];
+const staff = ['Guibin Huang','Chenyu Wei','Dan Wang','Jing Yu','Bailu Li'];
+const pis = ['Yaru Xu','Shenglei Yuan','Xiaohui Wang','Zhimei Gao','Nannan Kong'];
+const colors = [['#30765a','#e6f4e9'],['#416aa2','#e8f0fe'],['#946536','#fcf0df'],['#774590','#f3e8f8'],['#28777b','#e2f4f4']];
 const weekdays = ['周一','周二','周三','周四','周五','周六','周日'];
 const key = 'lab-schedule-demo-v1';
 const $ = id => document.getElementById(id);
@@ -54,7 +54,7 @@ const template = [
   [3,4,2,'09:30','12:00','报告复核']
 ];
 function read() {
-  try { const saved = JSON.parse(localStorage.getItem(key)); if (Array.isArray(saved)) return saved; } catch {}
+  try { const saved = JSON.parse(localStorage.getItem(key)); if (Array.isArray(saved)) return saved.map(item => ({ ...item, staff: staff[['实验员 A','实验员 B','实验员 C','实验员 D'].indexOf(item.staff)] ?? item.staff, pi: pis[['陈 PI','周 PI','林 PI'].indexOf(item.pi)] ?? item.pi })); } catch {}
   return template.map(([person,day,pi,start,end,task],index) => ({
     id:'demo-' + index,staff:staff[person],date:addDays(monday(today),day),pi:pis[pi],start,end,task
   }));
