@@ -34,7 +34,21 @@ const colors = [['#30765a','#e6f4e9'],['#416aa2','#e8f0fe'],['#946536','#fcf0df'
 const weekdays = ['周一','周二','周三','周四','周五','周六','周日'];
 const endpoint = 'https://lab-schedule-api.huibinox.workers.dev/api/schedule';
 const $ = id => document.getElementById(id);
-const today = new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date());
+const dateParts = new Intl.DateTimeFormat('en-US', {
+  timeZone:'Asia/Shanghai', calendar:'gregory', numberingSystem:'latn',
+  year:'numeric', month:'2-digit', day:'2-digit',
+}).formatToParts(new Date());
+const today = ['year','month','day'].map(type => dateParts.find(part => part.type === type).value).join('-');
+
+async function scheduleRequest(options) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    return await fetch(endpoint, {...options, signal:controller.signal});
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 function addDays(date, days) {
   const result = new Date(date + 'T00:00:00Z');
   result.setUTCDate(result.getUTCDate() + days);
@@ -55,7 +69,7 @@ async function refresh() {
   if (refreshing || $('editor').open) return;
   refreshing = true;
   try {
-    const response = await fetch(endpoint, {cache:'no-store'});
+    const response = await scheduleRequest({cache:'no-store'});
     if (!response.ok) throw new Error();
     const data = await response.json();
     if ($('editor').open) return;
@@ -65,7 +79,7 @@ async function refresh() {
     $('sync-status').textContent = '已同步 · 每 30 秒自动检查';
     if (changed) render();
   } catch {
-    $('sync-status').textContent = '同步失败，稍后自动重试。';
+    $('sync-status').textContent = '暂时无法连接共享排班，页面将自动重试。';
   } finally {
     refreshing = false;
   }
@@ -140,7 +154,7 @@ async function save(next) {
   buttons.forEach(button => button.disabled = true);
   $('error').textContent = '正在保存…';
   try {
-    const response = await fetch(endpoint, {
+    const response = await scheduleRequest({
       method:'PUT',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({version, shifts:next}),
